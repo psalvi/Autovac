@@ -1,0 +1,472 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033{\fonttbl{\f0\fnil\fcharset0 Calibri;}}
+{\*\generator Riched20 10.0.14393}\viewkind4\uc1 
+\pard\sa200\sl276\slmult1\f0\fs22\lang9 #include "TM4C123.h"                    // Device header\par
+#include <stdint.h>\par
+#include <stdbool.h>\par
+#include "inc/tm4c123gh6pm.h"\par
+#include "driverlib/sysctl.h"\par
+#include "driverlib/timer.h"\par
+#include "driverlib/pwm.h"\par
+\par
+ uint32_t d1 ,d2,d3;\par
+ uint32_t duty = 250;    //1.5ms pulse width\par
+\par
+void delay_Microsecond(uint32_t time);\par
+void Timer0A_init(void);\par
+uint32_t Timer0A_Handler(void);\par
+void Timer0B_init(void);\par
+uint32_t Timer0B_Handler(void);\par
+void Timer2A_Handler(void);\par
+void IntGlobalEnable(void);\par
+void Timer2A_init(void);\par
+void Timer2B_init(void);\par
+uint32_t Timer2B_Handler(void);\par
+void delayMs(int n);\par
+uint32_t d1 = 0;\par
+uint32_t d2 = 0;\par
+uint32_t d3 = 0;\par
+\par
+int pw = 0;\par
+int pw1 =0;\par
+const double _16MHz_1clock = 62.5e-9; /*Value of 1clock cycle in nanoseconds*/\par
+const uint32_t MULTIPLIER  = 5882;  /*Derived from speed of sound*/\par
+ \par
+#define ECHO 0x40 //PB6\par
+#define ECHO1 0x80//PB7\par
+#define ECHO2 0x02 // PB0\par
+#define TRIGGER 0x10 //PA4(OUTPUT)\par
+#define TRIGGER1 0x40 //PA 6\par
+#define TRIGGER2 0x08 // PA3\par
+#define BLUE_LED 0x04//PF2 onboard Blue LED \par
+#define RED_LED 0x02 //PF1 onboard RED LED\par
+#define GREEN_LED 0x08//PF3\par
+uint32_t highEdge2,lowEdge2;\par
+uint32_t highEdge,lowEdge;\par
+uint32_t highEdge1,lowEdge1;\par
+uint32_t ddistance;\par
+uint32_t ddistance1;/*Distance in centimeters*/\par
+uint32_t ddistance2;\par
+uint32_t counter =0; \par
+\par
+uint32_t Timer0A_Handler(void) \par
+\tab\{ \par
+GPIOA->DATA &=~TRIGGER;\par
+    delay_Microsecond(12);\par
+    GPIOA->DATA |=ECHO|TRIGGER;\par
+    delay_Microsecond(12);\par
+    GPIOA->DATA &=~TRIGGER;\par
+   \par
+    TIMER0->ICR =4;\par
+    while((TIMER0->RIS & 4)==0)\{\}; //Wait till captured\par
+        highEdge =  TIMER0->TAR;\par
+ \par
+        \par
+        TIMER0->ICR =4; //clear timer capture flag\par
+\par
+        while((TIMER0->RIS & 4)  ==0)\{\};\par
+            lowEdge = TIMER0->TAR;\par
+              ddistance = lowEdge -highEdge;\par
+              ddistance = _16MHz_1clock *(double) MULTIPLIER *(double)ddistance;\par
+ \par
+            return ddistance;\par
+ \par
+\}\par
+\par
+uint32_t Timer0B_Handler(void) \{ \par
+    GPIOA->DATA &=~TRIGGER1;\par
+    delay_Microsecond(12);\par
+    GPIOA->DATA |= ECHO1|TRIGGER1;\par
+    delay_Microsecond(12);\par
+    GPIOA->DATA &=~TRIGGER1;\par
+    TIMER0->ICR |=0x400;//clears the timer before read\par
+\par
+\par
+    while((TIMER0->RIS & 0x400)==0)\{\}; //Wait till captured\par
+    highEdge1 =  TIMER0->TBR;//reads the value from timer\par
+    TIMER0->ICR |=0x400; //clear timer capture flag\par
+\par
+\par
+    while((TIMER0->RIS & 0x400)  ==0)\{\};\par
+    lowEdge1 = TIMER0->TBR;\par
+    ddistance1 = lowEdge1 -highEdge1;\par
+    ddistance1 = _16MHz_1clock *(double) MULTIPLIER *(double)ddistance1;\par
+\tab\tab\tab /*\par
+\tab\tab\tab DISTANCE THRESHOLD\par
+\tab\tab\tab Trigger interrupt;...int0.start();\par
+\tab\tab\tab\par
+\tab\tab\tab */\par
+    return ddistance1;\par
+\}\par
+uint32_t Timer2B_Handler(void) \{ \par
+    GPIOA->DATA &=~TRIGGER2;\par
+    delay_Microsecond(12);\par
+    GPIOA->DATA |= ECHO2|TRIGGER2;\par
+    delay_Microsecond(12);\par
+    GPIOA->DATA &=~TRIGGER2;\par
+    TIMER2->ICR |=0x400;//clears the timer before read\par
+\par
+    while((TIMER2->RIS & 0x400)==0)\{\}; //Wait till captured\par
+    highEdge2 =  TIMER2->TBR;//reads the value from timer\par
+    TIMER2->ICR |=0x400; //clear timer capture flag\par
+    while((TIMER2->RIS & 0x400)  ==0)\{\};\par
+    lowEdge2 = TIMER2->TBR;\par
+    ddistance2 = lowEdge2 -highEdge2;\par
+    ddistance2 = _16MHz_1clock *(double) MULTIPLIER *(double)ddistance2;\par
+\tab\tab\tab /*\par
+\tab\tab\tab DISTANCE THRESHOLD\par
+\tab\tab\tab Trigger interrupt;...int0.start();\par
+\tab\tab\tab\par
+\tab\tab\tab */\par
+    return ddistance2;\par
+\}\par
+\par
+void Timer2A_Handler(void) \par
+\tab\{ \par
+ TIMER2_ICR_R|= 0x001;\par
+\tab\par
+  d1 = ddistance;\par
+\tab\tab  d2 = ddistance1;\par
+   if(d1 < 15&& d2 < 15) \par
+\tab\tab\{\par
+    GPIOF->DATA |=BLUE_LED;\par
+\tab\tab\tab GPIOF->DATA |=RED_LED;\par
+\tab\tab\tab //GPIOD->DIR |= 0x0F;\par
+\tab\tab\par
+\tab\tab\tab\par
+\tab\tab GPIOD->DATA &=~ 0x04;\tab\par
+\tab\tab GPIOE->DATA &=~ 0x04;\tab\par
+\tab\tab GPIOD->DATA |= 0x08;\par
+\tab\tab\tab GPIOE->DATA |= 0x08;\par
+\tab\tab for (pw1 = 100; pw1 <3999; pw1 += 600)\par
+        \{\par
+            PWM1->_2_CMPB = pw1;\par
+            delayMs(50);\par
+        \}\par
+        for (pw = 100; pw < 3999; pw += 600)\par
+        \{\par
+            PWM1->_3_CMPB = pw;\par
+            delayMs(50);\par
+        \}\par
+      \par
+\tab\tab\tab\tab GPIOD->DATA |= 0x04;\par
+\tab\tab GPIOD->DATA &=~ 0x08;\par
+\tab\tab GPIOE->DATA &=~ 0x0C;\par
+\par
+\tab\tab\par
+\tab\tab\tab\par
+\tab\tab  for (pw = 100; pw < 3999; pw += 150)\par
+        \{\par
+            PWM1->_3_CMPB = pw;\par
+\tab\tab\tab\tab delayMs(50);\par
+           \par
+        \}\par
+\tab\tab\tab\tab\par
+\tab\tab\tab\tab GPIOD->DATA &=~ 0x04;\par
+       \par
+      \par
+\tab\tab /* for (pw = 100; pw < 3999; pw += 125)\par
+        \{\par
+            PWM1->_3_CMPB = pw;\par
+\tab\tab\tab\tab delayMs(50);\par
+           \par
+        */\par
+\tab\tab\tab\tab\par
+\tab\tab\tab //\tab GPIOD->DATA |= 0x40;\par
+       \par
+\tab\tab\}\par
+\tab   else \par
+\tab\tab\{\par
+\tab\tab\tab GPIOF->DATA &=~BLUE_LED;\par
+      GPIOF->DATA &=~RED_LED; \par
+\tab\tab\}\par
+\tab\tab\par
+\tab\tab  d1 = Timer0A_Handler();\par
+    if(d1 < 15) \par
+\tab\tab\{\par
+    GPIOF->DATA |=BLUE_LED;\par
+\tab\tab\tab //GPIOD->DIR |= 0x0F;\par
+\tab\tab GPIOD->DATA |= 0x04;\par
+\tab\tab GPIOD->DATA &=~ 0x08;\par
+\tab\tab GPIOE->DATA &=~ 0x0C;\par
+\par
+\tab\tab\par
+\tab\tab\tab\par
+\tab\tab  for (pw = 100; pw < 3999; pw += 275)\par
+        \{\par
+            PWM1->_3_CMPB = pw;\par
+\tab\tab\tab\tab delayMs(50);\par
+           \par
+        \}\par
+\tab\tab\tab\tab\par
+\tab\tab\tab\tab GPIOD->DATA &=~ 0x04;\par
+       \par
+\tab\tab\}\par
+\tab   else \par
+\tab\tab\{\par
+\tab\tab\tab GPIOF->DATA &=~BLUE_LED;\par
+       \par
+\tab\tab\}\par
+\tab\tab\par
+\tab  d2 = Timer0B_Handler();\par
+    if(d2 < 15) \par
+\tab\tab\{\par
+    GPIOF->DATA |=RED_LED;\par
+\tab\tab\tab //GPIOD->DIR |= 0x0F;\par
+\tab\tab\tab\par
+\tab\tab GPIOE->DATA |= 0x04;\par
+\tab\tab\tab GPIOD->DATA &=~ 0x0C;\par
+\tab\tab\tab GPIOE->DATA &=~ 0x08;\par
+\tab\par
+\tab\tab  \par
+        for (pw1 = 100; pw1 <3999; pw1 += 275)\par
+        \{\par
+            PWM1->_2_CMPA = pw1;\par
+         delayMs(50);\par
+        \}\par
+\tab\tab\tab\tab GPIOE->DATA |= 0x04;\par
+\tab\tab\}\par
+\tab   else \par
+\tab\tab\tab GPIOF->DATA &=~RED_LED;\par
+\tab\tab\par
+\tab\tab\par
+\tab\tab  //GPIOD->DATA |= 0x8;\par
+ //GPIOE->DATA |= 0x8;\tab\tab\par
+\tab\tab // GPIOD->DATA |= 0x44;\par
+\tab\tab d3 = Timer2B_Handler();\par
+    if(d3 > 10) \par
+\tab\tab\{\par
+   // GPIOF->DATA |=GREEN_LED;\par
+\tab\tab\tab //GPIOD->DIR |= 0x0F;\par
+\tab\tab\tab GPIOD->DATA &=~ 0x04;\tab\par
+\tab\tab GPIOE->DATA &=~ 0x04;\tab\par
+\tab\tab GPIOD->DATA |= 0x08;\par
+\tab\tab\tab GPIOE->DATA |= 0x08;\par
+\tab\tab for (pw1 = 100; pw1 <3999; pw1 += 600)\par
+        \{\par
+            PWM1->_2_CMPB = pw1;\par
+            delayMs(50);\par
+        \}\par
+        for (pw = 100; pw < 3999; pw += 600)\par
+        \{\par
+            PWM1->_3_CMPB = pw;\par
+            delayMs(50);\par
+        \}\par
+\tab\tab\tab\tab\par
+\tab\tab\tab\tab GPIOD->DATA |= 0x04;\par
+\tab\tab GPIOD->DATA &=~ 0x08;\par
+\tab\tab GPIOE->DATA &=~ 0x0C;\par
+\par
+\tab\tab\par
+\tab\tab\tab\par
+\tab\tab  for (pw = 100; pw < 3999; pw += 150)\par
+        \{\par
+            PWM1->_3_CMPB = pw;\par
+\tab\tab\tab\tab delayMs(50);\par
+           \par
+        \}\par
+\tab\tab\tab\tab\par
+\tab\tab\tab //\tab GPIOD->DATA &=~ 0x04;\par
+\tab\tab\tab\tab GPIOD->DATA |= 0x04;\par
+\tab\tab     GPIOE->DATA |= 0x04;\tab\par
+\tab\tab\tab\tab\par
+\tab\tab\}\par
+\tab  else\par
+\tab  \{\par
+\tab //\tab GPIOD->DATA |= 0x04;\par
+\tab //GPIOE->DATA |= 0x04;\tab\par
+\tab  \}\par
+\tab  \par
+\tab  GPIOD->DATA |= 0x04;\par
+\tab\tab GPIOE->DATA |= 0x04;\tab\par
+\}\par
+\par
+void IntGlobalEnable(void)\par
+\{\par
+    __asm("    cpsie   i\\n");\par
+\}\par
+\par
+int main(void)\{\par
+\tab\par
+\tab //SysCtlClockSet(SYSCTL_SYSDIV_1|SYSCTL_USE_PLL|SYSCTL_OSC_MAIN|SYSCTL_XTAL_16MHZ);\par
+\par
+\par
+\tab SYSCTL->RCGCPWM |= 0x02;        // enable clock to PWM1\par
+\par
+\tab SYSCTL->RCGCGPIO |= 0x20;       // enable clock to GPIOF\par
+SYSCTL->RCGCGPIO |= 0x10;       // enable clock to GPIOE\par
+    SYSCTL->RCGCGPIO |= 0x08;       // enable clock to GPIOd\par
+\tab GPIO_PORTF_LOCK_R = 0x4C4F434B;\par
+\tab\tab GPIO_PORTF_CR_R |= 0x01;\par
+\par
+    SYSCTL->RCC &= ~0x00100000;     // use system clock for PWM\par
+   PWM1->_3_CTL = 0;               // disable PWM1_3 during configuration\par
+\par
+   PWM1->_3_GENB = 0x0000080C;     // output high when load and low when match\par
+    PWM1->_3_LOAD = 3999;           // 4 KHz\par
+    PWM1->_3_CTL = 0x08;               // enable PWM1_3\par
+\tab   PWM1->INVERT |= 0x80;           // positive pulse\par
+\tab   PWM1->INVERT |= 0x10;\par
+    PWM1->ENABLE |= 0x80;           // enable PWM1\par
+    PWM1->_2_CTL = 0;               // disable PWM1_3 during configuration\par
+    PWM1->_2_GENA = 0x0000080C;     // output high when load and low when match\par
+    PWM1->_2_LOAD = 3999;           // 4 KHz\par
+    PWM1->_2_CTL = 0x04;               // enable PWM1_2\par
+    PWM1->ENABLE |= 0x10;           // enable PWM1\par
+\tab\tab PWMPulseWidthSet(PWM1_BASE, PWM_OUT_4,duty);\par
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7,duty);\par
+\tab\tab GPIO_PORTF_LOCK_R = 0x4C4F434B;\par
+\tab\tab GPIO_PORTF_CR_R |= 0x01;\par
+\tab\par
+    GPIOF->DIR |= 0x09;            // set PORTF 3 pins as output (LED) pin\par
+    GPIOF->DEN |= 0x09;             // set PORTF 3 pins as digital pins\par
+    GPIOF->AFSEL |= 0x09;           // enable alternate function\par
+    GPIOF->PCTL &= ~0x000F00F;     // clear PORTF 3 alternate function\par
+    GPIOF->PCTL |= 0x0005005;    // set PORTF 3 alternate funtion to PWM\par
+\tab\tab\par
+\tab\tab //GPIOE->DIR |= 0x10;            // set PORTF 3 pins as output (LED) pin\par
+    //GPIOE->DEN |= 0x10;             // set PORTF 3 pins as digital pins\par
+    //GPIOE->AFSEL |= 0x10;           // enable alternate function\par
+   // GPIOE->PCTL &= ~0xF000F;     // clear PORTF 3 alternate function\par
+    //GPIOE->PCTL |= 0x50005;    // set PORTF 3 alternate funtion to PWM\par
+    \par
+\tab\tab GPIOD->DIR |= 0x0C;\par
+    GPIOD->DEN |= 0x0C;             // PORTB 3 as digital pins\par
+                  // set PORTB 3 as output\par
+    GPIOD->DATA |= 0x04;            // enable PORTB 3\par
+\tab\tab\par
+\tab\tab GPIOE->DIR |= 0x0C;\par
+    GPIOE->DEN |= 0x0C;             // PORTB 3 as digital pins\par
+                  // set PORTB 3 as output\par
+    GPIOE->DATA |= 0x04;            // enable PORTB 3\par
+\tab SYSCTL->RCGCGPIO |=(1U<<0); //Enable clock for PORTA \par
+  // SYSCTL->RCGCGPIO |=(1U<<5); //Enable clock for PORTF \par
+   GPIOA->DIR |=TRIGGER;\par
+   GPIOA->DIR |=TRIGGER1;\par
+\tab  GPIOA->DIR |=TRIGGER2;\par
+   GPIOF->DIR |=BLUE_LED;\par
+\tab  GPIOF->DIR |=RED_LED;\par
+   GPIOA->DEN |=(ECHO)|(TRIGGER);\par
+\tab  GPIOA->DEN |= (ECHO1)|(TRIGGER1);\par
+\tab  GPIOA->DEN |= (ECHO2)|(TRIGGER2);\par
+   GPIOF->DEN |= BLUE_LED;\par
+\tab  GPIOF->DEN |=RED_LED;\par
+\tab  GPIOF->DIR |=GREEN_LED;\par
+   Timer0A_init();\par
+\tab  Timer0B_init();\par
+\tab  Timer0A_Handler();\par
+\tab  Timer0B_Handler();\par
+\tab  Timer2A_init();\par
+\tab Timer2B_init();\par
+\tab  \par
+\tab  IntGlobalEnable();\par
+\tab\par
+\tab\par
+while(1)\par
+ \{\par
+\tab\par
+\tab  \par
+GPIOD->DATA |= 0x04;\par
+GPIOE->DATA |= 0x04; \par
+\tab  \par
+\tab\par
+\par
+ \par
+ \}\par
+  \}\par
+\par
+void delay_Microsecond(uint32_t time)\par
+\{\par
+    int i;\par
+    SYSCTL->RCGCTIMER |=(1U<<1); \par
+        TIMER1->CTL=0;\par
+    TIMER1->CFG=0x04;\par
+    TIMER1->TAMR=0x02;\par
+    TIMER1->TAILR= 16-1;\par
+    TIMER1->ICR =0x1;\par
+    TIMER1->CTL |=0x01;\par
+ \par
+    for(i=0;i<time;i++)\{ \par
+       while((TIMER1->RIS & 0x1)==0)\par
+        TIMER1->ICR = 0x1;\par
+    \}\par
+ \par
+\}\par
+\par
+void Timer0A_init(void)\par
+\{\par
+    SYSCTL->RCGCTIMER |=(1U<<0); \par
+    SYSCTL->RCGCGPIO |=(1U<<1); //PortB\par
+    GPIOB->DIR &=~ECHO;\par
+    GPIOB->DEN |=ECHO;\par
+    GPIOB->AFSEL |=ECHO;\par
+    GPIOB->PCTL &=~0x0F000000;            \par
+    GPIOB->PCTL |= 0x07000000;\par
+    NVIC_PRI4_R &= ~0xE0000000;\par
+    TIMER0->CTL &=~0x0001;           // TAen is disabled\par
+    TIMER0->CFG =4;   //16 bit timer\par
+    TIMER0->TAMR = 0x17;    // Timer count up TACDIR  Edge time mode TACMR CAPTURE MODE TAMR\par
+    TIMER0->CTL |=0x00C;    // bOTH EDGES ARE ENABLE\par
+    TIMER0->CTL |=0x0001;      // TAen enable to configure CFG\par
+\}\par
+\par
+\par
+void Timer0B_init(void)\par
+\{\par
+   // SYSCTL->RCGCTIMER |=(1U<<0); \par
+   // SYSCTL->RCGCGPIO |=(1U<<1); //PortB\par
+    GPIOB->DIR &=~ECHO1;\par
+    GPIOB->DEN |=ECHO1;\par
+    GPIOB->AFSEL |=ECHO1;\par
+    GPIOB->PCTL &=~0xF0000000;            \par
+    GPIOB->PCTL |= 0x70000000;\par
+ \tab   NVIC_PRI5_R |=0x00000020;\par
+    TIMER0->CTL &=~0x100;           // Tben is disabled\par
+    TIMER0->CFG =4;   //16 bit timer\par
+    TIMER0->TBMR = 0x17;    // Timer count up TACDIR  Edge time mode TACMR CAPTURE MODE TBMR\par
+    TIMER0->CTL |=0xC00;    // bOTH EDGES ARE ENABLE\par
+    TIMER0->CTL |=0x0100;      // TBen enable to configure CFG\par
+\}\par
+\par
+void Timer2A_init(void)\par
+\{\par
+    SYSCTL->RCGCTIMER |=(1U<<2); \par
+   // NVIC_PRI4_R &= ~0xE0000000;\par
+   TIMER2->CTL &=~0x001;           // TAen is disabed\par
+    \tab TIMER2->CFG =4;   //16 bit timer\par
+    \tab TIMER2->TAMR = 0x02;    // Timer PERIODIC\par
+\tab TIMER2_TAILR_R = 7999999;\par
+\tab NVIC_PRI5_R |=0x20000000;\par
+\tab NVIC_EN0_R |= 0x00800000; // Enabling Timer2A\par
+\tab TIMER2_IMR_R|= 0x001;  //arming Timer2A\par
+    //\tab TIMER0->CTL |=0xC00;    // bOTH EDGES ARE ENABLE\par
+    \tab TIMER2->CTL |=0x0001;      // TAen enable to configure CFG\par
+\}\par
+\par
+void Timer2B_init(void)\par
+\{\par
+   // SYSCTL->RCGCTIMER |=(1U<<0); \par
+   // SYSCTL->RCGCGPIO |=(1U<<1); //PortB\par
+    GPIOB->DIR &=~ECHO2;\par
+    GPIOB->DEN |=ECHO2;\par
+    GPIOB->AFSEL |=ECHO2;\par
+    GPIOB->PCTL &=~0x00000F0;            \par
+    GPIOB->PCTL |= 0x0000070;\par
+ \tab   //NVIC_PRI6_R |=0x0000060;\par
+    TIMER2->CTL &=~0x100;           // Tben is disabled\par
+    TIMER2->CFG =4;   //16 bit timer\par
+    TIMER2->TBMR = 0x17;    // Timer count up TACDIR  Edge time mode TACMR CAPTURE MODE TBMR\par
+    TIMER2->CTL |=0xC00;    // bOTH EDGES ARE ENABLE\par
+    TIMER2->CTL |=0x0100;      // TBen enable to configure CFG\par
+\}\par
+\par
+void delayMs(int n)\par
+\{\par
+    int i, j;\par
+    for(i = 0 ; i < n; i++)\par
+\par
+    for(j = 0; j < 3180; j++)\par
+            \{\}  // do nothing for 1 ms\par
+\}\par
+\par
+}
+ 
